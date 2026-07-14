@@ -20,7 +20,6 @@ SERVER_BIN    := $(BACKEND_DIR)/bin/server
 IMAGE_NAME    ?= ntoric/pulserboard
 VERSION       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMPOSE_FILE  ?= docker-compose.prod.yml
-ECR_IMAGE     ?= $(IMAGE_NAME)
 
 export CGO_ENABLED ?= 1
 export STATIC_DIR  ?= $(FRONTEND_DIR)/dist
@@ -100,14 +99,14 @@ docker-push: ## Push frontend + backend tags to registry
 	docker push $(IMAGE_NAME):backend
 	docker push $(IMAGE_NAME):$(VERSION)-backend
 
-docker-up: ## Start prod compose stack (needs ECR_IMAGE or IMAGE_NAME)
-	ECR_IMAGE=$(ECR_IMAGE) docker compose -f $(COMPOSE_FILE) up -d
+docker-up: ## Start prod compose stack
+	IMAGE_NAME=$(IMAGE_NAME) docker compose -f $(COMPOSE_FILE) up -d
 
 docker-down: ## Stop prod compose stack
-	ECR_IMAGE=$(ECR_IMAGE) docker compose -f $(COMPOSE_FILE) down
+	IMAGE_NAME=$(IMAGE_NAME) docker compose -f $(COMPOSE_FILE) down
 
 docker-logs: ## Tail compose logs
-	ECR_IMAGE=$(ECR_IMAGE) docker compose -f $(COMPOSE_FILE) logs -f
+	IMAGE_NAME=$(IMAGE_NAME) docker compose -f $(COMPOSE_FILE) logs -f
 
 # ---- Release ----
 # Creates an annotated git tag and pushes it (triggers CI image build).
