@@ -766,6 +766,127 @@ button {
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 }
 
+.io-banner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.io-banner strong {
+  color: var(--blue-bright);
+  font-family: var(--mono);
+  font-size: 1.1rem;
+}
+
+.io-add-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.io-add-row select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8rem;
+  min-width: 120px;
+}
+
+.io-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.io-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.io-table th {
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.io-table td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.io-table tr:last-child td {
+  border-bottom: none;
+}
+
+.io-table tr.active {
+  background: rgba(30, 79, 214, 0.06);
+}
+
+.io-table .mono {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--blue-bright);
+}
+
+.io-hint {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  font-family: var(--font);
+  margin-top: 0.15rem;
+}
+
+.io-input {
+  width: 100%;
+  min-width: 90px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.io-input.narrow {
+  width: 88px;
+  min-width: 72px;
+}
+
+.io-pwm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 140px;
+}
+
+.io-pwm input[type='range'] {
+  flex: 1;
+}
+
+.io-read {
+  color: var(--success);
+}
+
+.io-muted {
+  color: var(--text-dim);
+}
+
+.switch-btn.compact button {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
+}
+
 .event-list {
   display: flex;
   flex-direction: column;
@@ -839,6 +960,44 @@ button {
   font-size: 0.75rem;
   overflow: auto;
   max-height: 240px;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.telemetry-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.telemetry-gpio {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--blue-bright);
+  font-weight: 600;
+}
+
+.telemetry-value {
+  font-family: var(--mono);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.telemetry-mode {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
 }
 
 @media (max-width: 860px) {

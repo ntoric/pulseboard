@@ -125,6 +125,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+export type PinAddRequest = {
+  gpio: number
+  label?: string
+  mode?: string
+}
+
 export const api = {
   listDevices: () => request<Device[]>('/api/devices'),
   createDevice: (body: CreateDeviceRequest) =>
@@ -139,8 +145,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
+  addPin: (id: string, body: PinAddRequest) =>
+    request<{ pin: PinConfig }>(`/api/devices/${id}/pins`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  deletePin: (id: string, gpio: number) =>
+    request<{ ok: boolean }>(`/api/devices/${id}/pins/${gpio}`, { method: 'DELETE' }),
   updateDisplay: (id: string, body: DisplayUpdateRequest) =>
-    request<{ display: DisplayState }>(`/api/devices/${id}/display`, {
+    request<{ display: DisplayState; online?: boolean }>(`/api/devices/${id}/display`, {
       method: 'PUT',
       body: JSON.stringify(body),
     }),

@@ -208,6 +208,7 @@ function DisplayPanel({
   const [text, setText] = useState(lines.join('\n'))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [status, setStatus] = useState('')
 
   useEffect(() => {
     setEnabled(display.enabled)
@@ -228,6 +229,7 @@ function DisplayPanel({
   }) {
     setSaving(true)
     setError('')
+    setStatus('')
     try {
       const sourceText = extra?.text ?? text
       const text_lines = (extra?.clear ? [] : sourceText.split('\n')).map((l) => l.slice(0, 40))
@@ -238,6 +240,13 @@ function DisplayPanel({
         clear: !!extra?.clear,
       })
       onUpdated(res.display)
+      setStatus(
+        res.online
+          ? extra?.clear
+            ? 'Cleared on device'
+            : 'Pushed to device'
+          : 'Saved — device offline (queued)',
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Display update failed')
     } finally {
@@ -307,6 +316,9 @@ function DisplayPanel({
             </button>
           </div>
           {error && <p style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>{error}</p>}
+          {status && !error && (
+            <p style={{ color: 'var(--success)', fontSize: '0.85rem' }}>{status}</p>
+          )}
         </div>
         <div className={`display-preview ${enabled ? '' : 'off'}`}>
           {enabled ? text || ' ' : '(display off)'}
@@ -482,9 +494,34 @@ export default function DeviceDetailPage() {
 
   useFrontendSocket((msg) => {
     if (!id) return
+    if (msg.type === 'telemetry' && msg.id === id) {
+      const payload = msg.payload as {
+        pins?: { gpio: number; value: number }[]
+        firmware_ver?: string
+        local_ip?: string
+      }
+      if (payload?.pins?.length) {
+        setData((prev) => {
+          if (!prev) return prev
+          const map = new Map(payload.pins!.map((p) => [p.gpio, p.value]))
+          return {
+            ...prev,
+            device: {
+              ...prev.device,
+              online: true,
+              firmware_ver: payload.firmware_ver || prev.device.firmware_ver,
+              local_ip: payload.local_ip || prev.device.local_ip,
+            },
+            pins: prev.pins.map((p) =>
+              map.has(p.gpio) ? { ...p, value: map.get(p.gpio)! } : p,
+            ),
+          }
+        })
+      }
+      return
+    }
     if (
-      (msg.type === 'telemetry' ||
-        msg.type === 'device_status' ||
+      (msg.type === 'device_status' ||
         msg.type === 'device_online' ||
         msg.type === 'device_offline' ||
         msg.type === 'pin_updated' ||
@@ -568,9 +605,12 @@ export default function DeviceDetailPage() {
             ← Devices
           </Link>
           <h1 style={{ marginTop: '0.4rem' }}>{device.name}</h1>
-          <p>Configure pins and display dynamically — no reflash needed.</p>
+          <p>Configure pins and display dynamically — no reflash needed. Use <strong>Program IOs</strong> to set modes and signals in the app.</p>
         </div>
         <div className="actions">
+          <Link to={`/devices/${device.id}/io`} className="btn btn-primary">
+            Program IOs
+          </Link>
           <Link to={`/devices/${device.id}/data`} className="btn btn-ghost">
             View data
           </Link>
@@ -675,10 +715,10 @@ export default function DeviceDetailPage() {
 
       <div className="card">
         <div className="section-title">
-          <h2>Pins (GPIO 0–10)</h2>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-            Enable a pin, set mode, then control signal live
-          </span>
+          <h2>Pins (quick control)</h2>
+          <Link to={`/devices/${device.id}/io`} style={{ color: 'var(--blue-bright)', fontSize: '0.85rem' }}>
+            Open IO Programmer →
+          </Link>
         </div>
         <div className="pin-grid">
           {pins.map((pin) => (

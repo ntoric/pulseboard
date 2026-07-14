@@ -112,8 +112,12 @@ func (s *Store) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_pins_device ON pin_configs(device_id);
 	CREATE INDEX IF NOT EXISTS idx_events_device_created ON device_events(device_id, created_at DESC);
 	`
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	// One-shot clear must not stick across syncs
+	_, _ = s.db.Exec(`UPDATE display_states SET clear=0 WHERE clear!=0`)
+	return nil
 }
 
 func (s *Store) CreateDevice(req models.CreateDeviceRequest) (*models.Device, error) {
@@ -339,6 +343,24 @@ func (s *Store) UpdatePinValue(deviceID string, gpio, value int) error {
 	return err
 }
 
+func (s *Store) DeletePin(deviceID string, gpio int) error {
+	res, err := s.db.Exec(`DELETE FROM pin_configs WHERE device_id=? AND gpio=?`, deviceID, gpio)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) PinExists(deviceID string, gpio int) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM pin_configs WHERE device_id=? AND gpio=?`, deviceID, gpio).Scan(&n)
+	return n > 0, err
+}
+
 func (s *Store) GetDisplay(deviceID string) (*models.DisplayState, error) {
 	row := s.db.QueryRow(`
 		SELECT id, device_id, enabled, brightness, text_lines, clear, updated_at
@@ -371,17 +393,18 @@ func (s *Store) UpdateDisplay(deviceID string, req models.DisplayUpdateRequest) 
 		brightness = 255
 	}
 
+	// clear is a one-shot command — never persist sticky clear=true (it would wipe OLED on every sync)
 	existing, _ := s.GetDisplay(deviceID)
 	if existing == nil {
 		_, err = s.db.Exec(`
 			INSERT INTO display_states (id, device_id, enabled, brightness, text_lines, clear, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), deviceID, boolToInt(req.Enabled), brightness, string(lines), boolToInt(req.Clear), now)
+			VALUES (?, ?, ?, ?, ?, 0, ?)`,
+			uuid.New().String(), deviceID, boolToInt(req.Enabled), brightness, string(lines), now)
 	} else {
 		_, err = s.db.Exec(`
-			UPDATE display_states SET enabled=?, brightness=?, text_lines=?, clear=?, updated_at=?
+			UPDATE display_states SET enabled=?, brightness=?, text_lines=?, clear=0, updated_at=?
 			WHERE device_id=?`,
-			boolToInt(req.Enabled), brightness, string(lines), boolToInt(req.Clear), now, deviceID)
+			boolToInt(req.Enabled), brightness, string(lines), now, deviceID)
 	}
 	if err != nil {
 		return nil, err

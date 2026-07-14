@@ -68,7 +68,7 @@ struct PinState {
   bool enabled;
 };
 
-PinState pins[16];
+PinState pins[22];
 int pinCount = 0;
 
 int findPin(int gpio) {
@@ -153,7 +153,7 @@ void handlePinSet(JsonObject payload) {
   if (gpio < 0) return;
   int idx = findPin(gpio);
   if (idx < 0) {
-    if (pinCount >= 16) return;
+    if (pinCount >= 22) return;
     idx = pinCount++;
     pins[idx].gpio = gpio;
   }
@@ -168,7 +168,7 @@ void handleSync(JsonObject payload) {
   pinCount = 0;
   JsonArray arr = payload["pins"].as<JsonArray>();
   for (JsonObject p : arr) {
-    if (pinCount >= 16) break;
+    if (pinCount >= 22) break;
     pins[pinCount].gpio = p["gpio"] | 0;
     pins[pinCount].mode = p["mode"] | "disabled";
     pins[pinCount].value = p["value"] | 0;
@@ -285,7 +285,7 @@ struct PinState {
   int pwmFreq;
   bool enabled;
 };
-PinState pins[16];
+PinState pins[22];
 int pinCount = 0;
 
 bool displayEnabled = true;
@@ -340,13 +340,16 @@ void sendTelemetry() {
   JsonObject payload = doc["payload"].to<JsonObject>();
   payload["firmware_ver"] = FIRMWARE_VER;
   payload["local_ip"] = WiFi.localIP().toString();
+  payload["uptime_ms"] = (long)millis();
   JsonArray arr = payload["pins"].to<JsonArray>();
   for (int i = 0; i < pinCount; i++) {
-    if (!pins[i].enabled) continue;
-    if (pins[i].mode != "input" && pins[i].mode != "input_pullup" && pins[i].mode != "adc") continue;
+    if (!pins[i].enabled || pins[i].mode == "disabled") continue;
     JsonObject o = arr.add<JsonObject>();
     o["gpio"] = pins[i].gpio;
-    o["value"] = (pins[i].mode == "adc") ? analogRead(pins[i].gpio) : digitalRead(pins[i].gpio);
+    o["mode"] = pins[i].mode;
+    if (pins[i].mode == "adc") o["value"] = analogRead(pins[i].gpio);
+    else if (pins[i].mode == "input" || pins[i].mode == "input_pullup") o["value"] = digitalRead(pins[i].gpio);
+    else o["value"] = pins[i].value;
   }
   sendJSON(doc);
 }
@@ -359,7 +362,7 @@ void handlePinSet(JsonObject payload) {
   int gpio = payload["gpio"] | -1;
   if (gpio < 0) return;
   int idx = findPin(gpio);
-  if (idx < 0) { if (pinCount >= 16) return; idx = pinCount++; pins[idx].gpio = gpio; }
+  if (idx < 0) { if (pinCount >= 22) return; idx = pinCount++; pins[idx].gpio = gpio; }
   pins[idx].mode = payload["mode"] | "disabled";
   pins[idx].value = payload["value"] | 0;
   pins[idx].pwmFreq = payload["pwm_freq"] | 1000;
@@ -385,7 +388,7 @@ void handleDisplaySet(JsonObject payload) {
 void handleSync(JsonObject payload) {
   pinCount = 0;
   for (JsonObject p : payload["pins"].as<JsonArray>()) {
-    if (pinCount >= 16) break;
+    if (pinCount >= 22) break;
     pins[pinCount].gpio = p["gpio"] | 0;
     pins[pinCount].mode = p["mode"] | "disabled";
     pins[pinCount].value = p["value"] | 0;
@@ -478,7 +481,7 @@ unsigned long lastTelemetry = 0;
 struct PinState {
   int gpio; String mode; int value; int pwmFreq; bool enabled;
 };
-PinState pins[16];
+PinState pins[22];
 int pinCount = 0;
 bool displayEnabled = true;
 int displayBrightness = 128;
@@ -530,13 +533,16 @@ void sendTelemetry() {
   JsonObject payload = doc["payload"].to<JsonObject>();
   payload["firmware_ver"] = FIRMWARE_VER;
   payload["local_ip"] = WiFi.localIP().toString();
+  payload["uptime_ms"] = (long)millis();
   JsonArray arr = payload["pins"].to<JsonArray>();
   for (int i = 0; i < pinCount; i++) {
-    if (!pins[i].enabled) continue;
-    if (pins[i].mode != "input" && pins[i].mode != "input_pullup" && pins[i].mode != "adc") continue;
+    if (!pins[i].enabled || pins[i].mode == "disabled") continue;
     JsonObject o = arr.add<JsonObject>();
     o["gpio"] = pins[i].gpio;
-    o["value"] = (pins[i].mode == "adc") ? analogRead(pins[i].gpio) : digitalRead(pins[i].gpio);
+    o["mode"] = pins[i].mode;
+    if (pins[i].mode == "adc") o["value"] = analogRead(pins[i].gpio);
+    else if (pins[i].mode == "input" || pins[i].mode == "input_pullup") o["value"] = digitalRead(pins[i].gpio);
+    else o["value"] = pins[i].value;
   }
   sendJSON(doc);
 }
@@ -549,7 +555,7 @@ void handlePinSet(JsonObject payload) {
   int gpio = payload["gpio"] | -1;
   if (gpio < 0) return;
   int idx = findPin(gpio);
-  if (idx < 0) { if (pinCount >= 16) return; idx = pinCount++; pins[idx].gpio = gpio; }
+  if (idx < 0) { if (pinCount >= 22) return; idx = pinCount++; pins[idx].gpio = gpio; }
   pins[idx].mode = payload["mode"] | "disabled";
   pins[idx].value = payload["value"] | 0;
   pins[idx].pwmFreq = payload["pwm_freq"] | 1000;
@@ -574,7 +580,7 @@ void handleDisplaySet(JsonObject payload) {
 void handleSync(JsonObject payload) {
   pinCount = 0;
   for (JsonObject p : payload["pins"].as<JsonArray>()) {
-    if (pinCount >= 16) break;
+    if (pinCount >= 22) break;
     pins[pinCount].gpio = p["gpio"] | 0;
     pins[pinCount].mode = p["mode"] | "disabled";
     pins[pinCount].value = p["value"] | 0;

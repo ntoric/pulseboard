@@ -24,7 +24,7 @@ struct PinState {
   bool enabled;
 };
 
-PinState pins[16];
+PinState pins[22];
 int pinCount = 0;
 
 int findPin(int gpio) {
@@ -109,7 +109,7 @@ void handlePinSet(JsonObject payload) {
   if (gpio < 0) return;
   int idx = findPin(gpio);
   if (idx < 0) {
-    if (pinCount >= 16) return;
+    if (pinCount >= 22) return;
     idx = pinCount++;
     pins[idx].gpio = gpio;
   }
@@ -124,7 +124,7 @@ void handleSync(JsonObject payload) {
   pinCount = 0;
   JsonArray arr = payload["pins"].as<JsonArray>();
   for (JsonObject p : arr) {
-    if (pinCount >= 16) break;
+    if (pinCount >= 22) break;
     pins[pinCount].gpio = p["gpio"] | 0;
     pins[pinCount].mode = p["mode"] | "disabled";
     pins[pinCount].value = p["value"] | 0;

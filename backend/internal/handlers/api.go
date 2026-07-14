@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -26,6 +28,8 @@ func (a *API) Register(r *mux.Router) {
 	api.HandleFunc("/devices/{id}", a.DeleteDevice).Methods("DELETE")
 	api.HandleFunc("/devices/{id}/pins", a.GetPins).Methods("GET")
 	api.HandleFunc("/devices/{id}/pins", a.UpdatePin).Methods("PUT")
+	api.HandleFunc("/devices/{id}/pins", a.AddPin).Methods("POST")
+	api.HandleFunc("/devices/{id}/pins/{gpio}", a.DeletePin).Methods("DELETE")
 	api.HandleFunc("/devices/{id}/display", a.GetDisplay).Methods("GET")
 	api.HandleFunc("/devices/{id}/display", a.UpdateDisplay).Methods("PUT")
 	api.HandleFunc("/devices/{id}/bus", a.GetBus).Methods("GET")
@@ -135,6 +139,10 @@ func (a *API) UpdatePin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	if !models.ValidGPIO(req.GPIO) {
+		writeErr(w, http.StatusBadRequest, "gpio must be 0–21")
+		return
+	}
 	if !models.ValidModes[req.Mode] {
 		writeErr(w, http.StatusBadRequest, "invalid mode")
 		return
@@ -161,6 +169,92 @@ func (a *API) UpdatePin(w http.ResponseWriter, r *http.Request) {
 
 	a.Hub.BroadcastFrontend(ws.Message{Type: "pin_updated", ID: id, Payload: mustRaw(pin)})
 	writeJSON(w, http.StatusOK, map[string]any{"pin": pin, "command": cmd})
+}
+
+func (a *API) AddPin(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	device, err := a.Store.GetDevice(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "device not found")
+		return
+	}
+	var req models.PinAddRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if !models.ValidGPIO(req.GPIO) {
+		writeErr(w, http.StatusBadRequest, "gpio must be 0–21")
+		return
+	}
+	exists, err := a.Store.PinExists(id, req.GPIO)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if exists {
+		writeErr(w, http.StatusConflict, "gpio already in IO program")
+		return
+	}
+	mode := req.Mode
+	if mode == "" {
+		mode = "disabled"
+	}
+	if !models.ValidModes[mode] {
+		writeErr(w, http.StatusBadRequest, "invalid mode")
+		return
+	}
+	label := strings.TrimSpace(req.Label)
+	if label == "" {
+		label = models.PinLabel(device.BoardType, req.GPIO)
+	}
+	pin, err := a.Store.UpdatePin(id, models.PinUpdateRequest{
+		GPIO:    req.GPIO,
+		Label:   label,
+		Mode:    mode,
+		Value:   0,
+		PWMFreq: 1000,
+		Enabled: false,
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	a.Hub.BroadcastFrontend(ws.Message{Type: "pin_updated", ID: id, Payload: mustRaw(pin)})
+	writeJSON(w, http.StatusCreated, map[string]any{"pin": pin})
+}
+
+func (a *API) DeletePin(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	gpioStr := mux.Vars(r)["gpio"]
+	var gpio int
+	if _, err := fmt.Sscanf(gpioStr, "%d", &gpio); err != nil || !models.ValidGPIO(gpio) {
+		writeErr(w, http.StatusBadRequest, "invalid gpio")
+		return
+	}
+	if err := a.Store.DeletePin(id, gpio); err != nil {
+		if err == sql.ErrNoRows {
+			writeErr(w, http.StatusNotFound, "pin not found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Tell module to release the pin (disabled / input)
+	payload := map[string]any{
+		"gpio":     gpio,
+		"label":    "",
+		"mode":     "disabled",
+		"value":    0,
+		"pwm_freq": 1000,
+		"enabled":  false,
+	}
+	cmd, _ := a.Hub.PushCommand(id, "pin_set", payload)
+	a.Hub.BroadcastFrontend(ws.Message{Type: "pin_updated", ID: id, Payload: mustRaw(map[string]any{
+		"gpio":    gpio,
+		"deleted": true,
+	})})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "command": cmd})
 }
 
 func (a *API) GetDisplay(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +291,7 @@ func (a *API) UpdateDisplay(w http.ResponseWriter, r *http.Request) {
 		"enabled":    display.Enabled,
 		"brightness": display.Brightness,
 		"text_lines": req.TextLines,
-		"clear":      display.Clear,
+		"clear":      req.Clear, // one-shot from this request, not sticky DB state
 	}
 	cmd, err := a.Hub.PushCommand(id, "display_set", payload)
 	if err != nil {
@@ -206,7 +300,11 @@ func (a *API) UpdateDisplay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.Hub.BroadcastFrontend(ws.Message{Type: "display_updated", ID: id, Payload: mustRaw(display)})
-	writeJSON(w, http.StatusOK, map[string]any{"display": display, "command": cmd})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"display": display,
+		"command": cmd,
+		"online":  a.Hub.IsOnline(id),
+	})
 }
 
 func (a *API) GetBus(w http.ResponseWriter, r *http.Request) {

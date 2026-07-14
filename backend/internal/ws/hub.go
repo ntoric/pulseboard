@@ -181,9 +181,12 @@ func (h *Hub) handleDeviceMessage(deviceID string, data []byte) {
 			for _, p := range status.Pins {
 				_ = h.store.UpdatePinValue(deviceID, p.GPIO, p.Value)
 			}
-			if len(status.Pins) > 0 {
-				_, _ = h.store.InsertDeviceEvent(deviceID, "telemetry", status)
-			}
+			// Always persist telemetry samples (including heartbeats with empty pins)
+			_, _ = h.store.InsertDeviceEvent(deviceID, "telemetry", json.RawMessage(msg.Payload))
+			h.BroadcastFrontend(Message{Type: "telemetry", ID: deviceID, Payload: msg.Payload})
+		} else {
+			// Fallback: keep raw payload so the UI still shows something
+			_, _ = h.store.InsertDeviceEvent(deviceID, "telemetry", json.RawMessage(msg.Payload))
 			h.BroadcastFrontend(Message{Type: "telemetry", ID: deviceID, Payload: msg.Payload})
 		}
 	case "data":

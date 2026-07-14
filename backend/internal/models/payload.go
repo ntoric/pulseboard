@@ -3,6 +3,7 @@ package models
 import "encoding/json"
 
 // DisplayCommandPayload builds a device-facing display payload with text_lines as a JSON array.
+// clear is always false for sync — clear is a one-shot command only.
 func DisplayCommandPayload(d *DisplayState) map[string]any {
 	if d == nil {
 		return nil
@@ -15,7 +16,7 @@ func DisplayCommandPayload(d *DisplayState) map[string]any {
 		"enabled":    d.Enabled,
 		"brightness": d.Brightness,
 		"text_lines": lines,
-		"clear":      d.Clear,
+		"clear":      false,
 	}
 }
 
@@ -33,9 +34,24 @@ func BusCommandPayload(b *BusConfig) map[string]any {
 	}
 }
 
+// PinCommandPayload strips DB metadata so device sync stays small.
+func PinCommandPayload(p PinConfig) map[string]any {
+	return map[string]any{
+		"gpio":     p.GPIO,
+		"mode":     p.Mode,
+		"value":    p.Value,
+		"pwm_freq": p.PWMFreq,
+		"enabled":  p.Enabled,
+	}
+}
+
 // SyncCommandPayload builds the full sync payload for a device.
 func SyncCommandPayload(pins []PinConfig, display *DisplayState, bus *BusConfig) map[string]any {
-	payload := map[string]any{"pins": pins}
+	pinPayloads := make([]map[string]any, 0, len(pins))
+	for _, p := range pins {
+		pinPayloads = append(pinPayloads, PinCommandPayload(p))
+	}
+	payload := map[string]any{"pins": pinPayloads}
 	if disp := DisplayCommandPayload(display); disp != nil {
 		payload["display"] = disp
 	}

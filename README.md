@@ -1,6 +1,6 @@
 # PulseBoard — ESP32-C3 Remote Control
 
-Control multiple ESP32-C3 boards from a web app over local network or the internet. Flash a minimal agent once; pin modes, signals, PWM, ADC reads, and display content are driven live from the app.
+Control multiple ESP32-C3 boards from a web app over local network or the internet. Flash a minimal agent once; pin modes, signals, PWM, ADC reads, and display content are driven live from the app via the **IO Programmer** — not hardcoded in the module sketch.
 
 ## Stack
 
@@ -43,7 +43,7 @@ Then open `http://localhost:8080`.
 1. Create a device in the UI — you get a unique **device token**.
 2. Open **Firmware**, copy a preset, set WiFi + `SERVER_HOST` + `DEVICE_TOKEN`.
 3. Upload to the board. It connects to `/ws/device?token=...`.
-4. From the device page, enable GPIOs, set modes (`input`, `output`, `pwm`, `adc`, …), and control values live.
+4. Open the device → **Program IOs** to enable GPIOs, set modes (`input`, `output`, `pwm`, `adc`, …), add/remove pins, and control values live.
 5. Boards with OLED/LCD show a **Display** panel for text, brightness, and clear.
 
 Commands are delivered instantly over WebSocket when online, or queued in SQLite until the board reconnects.
@@ -60,6 +60,8 @@ Commands are delivered instantly over WebSocket when online, or queued in SQLite
 - `GET/POST /api/devices`
 - `GET/PUT/DELETE /api/devices/{id}`
 - `PUT /api/devices/{id}/pins`
+- `POST /api/devices/{id}/pins` — add a GPIO to the IO program
+- `DELETE /api/devices/{id}/pins/{gpio}` — remove a GPIO from the program
 - `PUT /api/devices/{id}/display`
 - `GET/PUT /api/devices/{id}/bus` — SDA / SCL / RX / TX / baud
 - `POST /api/devices/{id}/serial` — print a line on the device Serial Monitor

@@ -78,6 +78,18 @@ type PinUpdateRequest struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// PinAddRequest adds a GPIO to the device's IO program (app-side, no reflash).
+type PinAddRequest struct {
+	GPIO  int    `json:"gpio"`
+	Label string `json:"label"`
+	Mode  string `json:"mode"`
+}
+
+// ValidGPIO reports whether gpio is a usable ESP32-C3 pin number.
+func ValidGPIO(gpio int) bool {
+	return gpio >= 0 && gpio <= 21
+}
+
 type DisplayUpdateRequest struct {
 	Enabled    bool     `json:"enabled"`
 	Brightness int      `json:"brightness"`
@@ -130,8 +142,9 @@ type DeviceDataPayload struct {
 }
 
 type PinTelemetry struct {
-	GPIO  int `json:"gpio"`
-	Value int `json:"value"`
+	GPIO  int    `json:"gpio"`
+	Value int    `json:"value"`
+	Mode  string `json:"mode,omitempty"`
 }
 
 // DefaultGPIOs — common ESP32-C3 breakout (0–10 header)
