@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build
+frontend/dist/
+backend/bin/
+*.exe
+
+# Data
+backend/data/
+*.db
+*.db-journal
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+.env
+.env.*
+
+# TLS certs (keep folder via certs/README.md)
+certs/*.pem
+certs/*.key
+certs/*.crt
