@@ -39,15 +39,18 @@ function parseTelemetryPayload(raw: unknown): LiveTelemetry | null {
           ? (raw as Record<string, unknown>)
           : null
     if (!p) return null
-    const pinsRaw = Array.isArray(p.pins) ? p.pins : []
+    const pinsRaw: unknown[] = Array.isArray(p.pins) ? p.pins : []
     const pins: TelemetryPin[] = pinsRaw
-      .map((x: { gpio?: number; value?: number; mode?: string }) => ({
-        gpio: Number(x.gpio),
-        value: Number(x.value),
-        mode: x.mode,
-      }))
-      .filter((x) => !Number.isNaN(x.gpio))
-      .sort((a, b) => a.gpio - b.gpio)
+      .map((item): TelemetryPin => {
+        const x = item as { gpio?: number; value?: number; mode?: string }
+        return {
+          gpio: Number(x.gpio),
+          value: Number(x.value),
+          mode: x.mode,
+        }
+      })
+      .filter((x: TelemetryPin) => !Number.isNaN(x.gpio))
+      .sort((a: TelemetryPin, b: TelemetryPin) => a.gpio - b.gpio)
     return {
       firmware_ver: typeof p.firmware_ver === 'string' ? p.firmware_ver : undefined,
       local_ip: typeof p.local_ip === 'string' ? p.local_ip : undefined,
