@@ -6,6 +6,7 @@ import {
   type PinConfig,
   type DisplayState,
   type PinUpdateRequest,
+  type BusConfig,
 } from '../api'
 import { useFrontendSocket } from '../hooks/useFrontendSocket'
 
@@ -17,6 +18,8 @@ const MODES = [
   { value: 'pwm', label: 'PWM' },
   { value: 'adc', label: 'ADC' },
 ]
+
+const GPIO_OPTIONS = Array.from({ length: 22 }, (_, i) => i)
 
 function PinCard({
   pin,
@@ -33,6 +36,7 @@ function PinCard({
   const isOutput = draft.mode === 'output'
   const isPwm = draft.mode === 'pwm'
   const isReadOnly = draft.mode === 'input' || draft.mode === 'input_pullup' || draft.mode === 'adc'
+  const isBuiltinLed = draft.gpio === 8
 
   async function commit(next: PinConfig) {
     setDraft(next)
@@ -96,22 +100,29 @@ function PinCard({
         </div>
 
         {isOutput && draft.enabled && (
-          <div className="switch-btn">
-            <button
-              className={draft.value === 0 ? 'active' : ''}
-              disabled={busy}
-              onClick={() => commit({ ...draft, value: 0 })}
-            >
-              LOW
-            </button>
-            <button
-              className={draft.value === 1 ? 'active' : ''}
-              disabled={busy}
-              onClick={() => commit({ ...draft, value: 1 })}
-            >
-              HIGH
-            </button>
-          </div>
+          <>
+            <div className="switch-btn">
+              <button
+                className={draft.value === 0 ? 'active' : ''}
+                disabled={busy}
+                onClick={() => commit({ ...draft, value: 0 })}
+              >
+                {isBuiltinLed ? 'OFF' : 'LOW'}
+              </button>
+              <button
+                className={draft.value === 1 ? 'active' : ''}
+                disabled={busy}
+                onClick={() => commit({ ...draft, value: 1 })}
+              >
+                {isBuiltinLed ? 'ON' : 'HIGH'}
+              </button>
+            </div>
+            {isBuiltinLed && (
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-dim)', margin: 0 }}>
+                Active-low LED — ON lights the LED
+              </p>
+            )}
+          </>
         )}
 
         {isPwm && draft.enabled && (
@@ -126,8 +137,12 @@ function PinCard({
                 value={draft.value}
                 disabled={busy}
                 onChange={(e) => setDraft({ ...draft, value: Number(e.target.value) })}
-                onMouseUp={() => commit(draft)}
-                onTouchEnd={() => commit(draft)}
+                onMouseUp={(e) =>
+                  commit({ ...draft, value: Number((e.target as HTMLInputElement).value) })
+                }
+                onTouchEnd={(e) =>
+                  commit({ ...draft, value: Number((e.target as HTMLInputElement).value) })
+                }
               />
             </div>
             <div className="row">
@@ -192,6 +207,7 @@ function DisplayPanel({
   const [brightness, setBrightness] = useState(display.brightness)
   const [text, setText] = useState(lines.join('\n'))
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setEnabled(display.enabled)
@@ -204,10 +220,17 @@ function DisplayPanel({
     }
   }, [display])
 
-  async function save(extra?: { clear?: boolean; enabled?: boolean; brightness?: number }) {
+  async function save(extra?: {
+    clear?: boolean
+    enabled?: boolean
+    brightness?: number
+    text?: string
+  }) {
     setSaving(true)
+    setError('')
     try {
-      const text_lines = (extra?.clear ? [] : text.split('\n')).map((l) => l.slice(0, 40))
+      const sourceText = extra?.text ?? text
+      const text_lines = (extra?.clear ? [] : sourceText.split('\n')).map((l) => l.slice(0, 40))
       const res = await api.updateDisplay(deviceId, {
         enabled: extra?.enabled ?? enabled,
         brightness: extra?.brightness ?? brightness,
@@ -215,6 +238,8 @@ function DisplayPanel({
         clear: !!extra?.clear,
       })
       onUpdated(res.display)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Display update failed')
     } finally {
       setSaving(false)
     }
@@ -254,8 +279,16 @@ function DisplayPanel({
               max={255}
               value={brightness}
               onChange={(e) => setBrightness(Number(e.target.value))}
-              onMouseUp={() => save({ brightness })}
-              onTouchEnd={() => save({ brightness })}
+              onMouseUp={(e) => {
+                const v = Number((e.target as HTMLInputElement).value)
+                setBrightness(v)
+                save({ brightness: v })
+              }}
+              onTouchEnd={(e) => {
+                const v = Number((e.target as HTMLInputElement).value)
+                setBrightness(v)
+                save({ brightness: v })
+              }}
             />
           </div>
           <div className="actions">
@@ -267,16 +300,156 @@ function DisplayPanel({
               disabled={saving}
               onClick={() => {
                 setText('')
-                save({ clear: true })
+                save({ clear: true, text: '' })
               }}
             >
               Clear
             </button>
           </div>
+          {error && <p style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>{error}</p>}
         </div>
         <div className={`display-preview ${enabled ? '' : 'off'}`}>
           {enabled ? text || ' ' : '(display off)'}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function BusPanel({
+  deviceId,
+  bus,
+  onUpdated,
+}: {
+  deviceId: string
+  bus: BusConfig
+  onUpdated: (b: BusConfig) => void
+}) {
+  const [draft, setDraft] = useState(bus)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => setDraft(bus), [bus])
+
+  async function save() {
+    setSaving(true)
+    setMsg('')
+    try {
+      const res = await api.updateBus(deviceId, {
+        sda: draft.sda,
+        scl: draft.scl,
+        rx: draft.rx,
+        tx: draft.tx,
+        uart_baud: draft.uart_baud,
+      })
+      onUpdated(res.bus)
+      setMsg('Bus pins applied to device')
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function pinSelect(key: 'sda' | 'scl' | 'rx' | 'tx', label: string) {
+    return (
+      <div className="field">
+        <label>{label}</label>
+        <select
+          value={draft[key]}
+          onChange={(e) => setDraft({ ...draft, [key]: Number(e.target.value) })}
+        >
+          {GPIO_OPTIONS.map((g) => (
+            <option key={g} value={g}>
+              GPIO {g}
+            </option>
+          ))}
+        </select>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card">
+      <div className="section-title">
+        <h2>Bus pins (I2C / UART)</h2>
+        <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+          Program SDA, SCL, RX, TX without reflashing
+        </span>
+      </div>
+      <div className="form-grid bus-grid">
+        {pinSelect('sda', 'SDA (I2C data)')}
+        {pinSelect('scl', 'SCL (I2C clock)')}
+        {pinSelect('rx', 'RX (UART1)')}
+        {pinSelect('tx', 'TX (UART1)')}
+        <div className="field">
+          <label>UART baud</label>
+          <input
+            type="number"
+            min={1200}
+            max={921600}
+            value={draft.uart_baud}
+            onChange={(e) => setDraft({ ...draft, uart_baud: Number(e.target.value) })}
+          />
+        </div>
+        <div className="actions">
+          <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>
+            Apply bus config
+          </button>
+        </div>
+        {msg && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{msg}</p>}
+      </div>
+    </div>
+  )
+}
+
+function SerialPanel({ deviceId }: { deviceId: string }) {
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState('')
+
+  async function send() {
+    if (!message.trim()) return
+    setSending(true)
+    setStatus('')
+    try {
+      const res = await api.sendSerial(deviceId, message)
+      setStatus(res.online ? 'Sent — check Serial Monitor' : 'Queued — device offline')
+      setMessage('')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Send failed')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="section-title">
+        <h2>Serial send</h2>
+        <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+          Prints on the device Serial Monitor (115200)
+        </span>
+      </div>
+      <div className="form-grid">
+        <div className="field">
+          <label>Message</label>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Hello from PulseBoard"
+            rows={3}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send()
+            }}
+          />
+        </div>
+        <div className="actions">
+          <button className="btn btn-primary btn-sm" disabled={sending || !message.trim()} onClick={send}>
+            Send to Serial
+          </button>
+        </div>
+        {status && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{status}</p>}
       </div>
     </div>
   )
@@ -315,7 +488,8 @@ export default function DeviceDetailPage() {
         msg.type === 'device_online' ||
         msg.type === 'device_offline' ||
         msg.type === 'pin_updated' ||
-        msg.type === 'display_updated') &&
+        msg.type === 'display_updated' ||
+        msg.type === 'bus_updated') &&
       msg.id === id
     ) {
       load()
@@ -384,7 +558,7 @@ export default function DeviceDetailPage() {
     )
   }
 
-  const { device, pins, display, pinout } = data
+  const { device, pins, display, bus, pinout } = data
 
   return (
     <div className="detail-layout">
@@ -397,6 +571,9 @@ export default function DeviceDetailPage() {
           <p>Configure pins and display dynamically — no reflash needed.</p>
         </div>
         <div className="actions">
+          <Link to={`/devices/${device.id}/data`} className="btn btn-ghost">
+            View data
+          </Link>
           <button className="btn btn-ghost" onClick={sync}>
             Sync now
           </button>
@@ -486,6 +663,16 @@ export default function DeviceDetailPage() {
         />
       )}
 
+      {bus && (
+        <BusPanel
+          deviceId={device.id}
+          bus={bus}
+          onUpdated={(b) => setData((prev) => (prev ? { ...prev, bus: b } : prev))}
+        />
+      )}
+
+      <SerialPanel deviceId={device.id} />
+
       <div className="card">
         <div className="section-title">
           <h2>Pins (GPIO 0–10)</h2>
@@ -495,12 +682,7 @@ export default function DeviceDetailPage() {
         </div>
         <div className="pin-grid">
           {pins.map((pin) => (
-            <PinCard
-              key={pin.id}
-              pin={pin}
-              busy={busyPin === pin.gpio}
-              onSave={savePin}
-            />
+            <PinCard key={pin.id} pin={pin} busy={busyPin === pin.gpio} onSave={savePin} />
           ))}
         </div>
       </div>

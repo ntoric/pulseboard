@@ -24,10 +24,10 @@ func FirmwarePresets() []FirmwarePreset {
 		{
 			ID:          "agent-oled",
 			Name:        "ESP32-C3 Remote Agent + OLED",
-			Description: "Minimal firmware for ESP32-C3 OLED boards with header GPIO 0–10, 3V, 5V, RX, TX, GND. Same remote agent with SSD1306 OLED (I2C SDA=GPIO8, SCL=GPIO9). Leave 8/9 free when using the display. Text and brightness come from the app.",
+			Description: "U8g2 OLED agent for ESP32-C3 (72x40). I2C defaults SDA=GPIO5 / SCL=GPIO6 (configurable from app). GPIO8 built-in LED is active-low. Supports display push, bus pins, and serial print.",
 			BoardType:   "esp32-c3-oled",
 			HasDisplay:  true,
-			Libraries:   []string{"ArduinoJson", "WebSockets", "Adafruit SSD1306", "Adafruit GFX"},
+			Libraries:   []string{"ArduinoJson", "WebSockets", "U8g2"},
 			Code:        firmwareOLED,
 		},
 		{

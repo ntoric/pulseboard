@@ -171,6 +171,7 @@ func (h *Hub) handleDeviceMessage(deviceID string, data []byte) {
 			for _, p := range status.Pins {
 				_ = h.store.UpdatePinValue(deviceID, p.GPIO, p.Value)
 			}
+			_, _ = h.store.InsertDeviceEvent(deviceID, "hello", status)
 			h.BroadcastFrontend(Message{Type: "device_status", ID: deviceID, Payload: msg.Payload})
 		}
 	case "telemetry":
@@ -180,7 +181,16 @@ func (h *Hub) handleDeviceMessage(deviceID string, data []byte) {
 			for _, p := range status.Pins {
 				_ = h.store.UpdatePinValue(deviceID, p.GPIO, p.Value)
 			}
+			if len(status.Pins) > 0 {
+				_, _ = h.store.InsertDeviceEvent(deviceID, "telemetry", status)
+			}
 			h.BroadcastFrontend(Message{Type: "telemetry", ID: deviceID, Payload: msg.Payload})
+		}
+	case "data":
+		var payload models.DeviceDataPayload
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
+			_, _ = h.store.InsertDeviceEvent(deviceID, "data", payload)
+			h.BroadcastFrontend(Message{Type: "device_data", ID: deviceID, Payload: msg.Payload})
 		}
 	case "ack":
 		if msg.ID != "" {
@@ -195,12 +205,15 @@ func (h *Hub) handleDeviceMessage(deviceID string, data []byte) {
 }
 
 func (h *Hub) sendSync(deviceID string, conn *websocket.Conn) {
+	device, _ := h.store.GetDevice(deviceID)
 	pins, _ := h.store.GetPins(deviceID)
 	display, _ := h.store.GetDisplay(deviceID)
-	payload := map[string]any{
-		"pins":    pins,
-		"display": display,
+	boardType := "esp32-c3"
+	if device != nil {
+		boardType = device.BoardType
 	}
+	bus, _ := h.store.EnsureBus(deviceID, boardType)
+	payload := models.SyncCommandPayload(pins, display, bus)
 	h.writeJSON(conn, Message{Type: "sync", Payload: mustJSON(payload)})
 }
 

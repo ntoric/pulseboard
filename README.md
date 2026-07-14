@@ -61,6 +61,9 @@ Commands are delivered instantly over WebSocket when online, or queued in SQLite
 - `GET/PUT/DELETE /api/devices/{id}`
 - `PUT /api/devices/{id}/pins`
 - `PUT /api/devices/{id}/display`
+- `GET/PUT /api/devices/{id}/bus` — SDA / SCL / RX / TX / baud
+- `POST /api/devices/{id}/serial` — print a line on the device Serial Monitor
+- `GET /api/devices/{id}/events` — telemetry and data from the module
 - `POST /api/devices/{id}/sync`
 - `GET /api/firmware/presets`
 - `WS /ws/frontend` — UI live updates

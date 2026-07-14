@@ -28,6 +28,10 @@ func (a *API) Register(r *mux.Router) {
 	api.HandleFunc("/devices/{id}/pins", a.UpdatePin).Methods("PUT")
 	api.HandleFunc("/devices/{id}/display", a.GetDisplay).Methods("GET")
 	api.HandleFunc("/devices/{id}/display", a.UpdateDisplay).Methods("PUT")
+	api.HandleFunc("/devices/{id}/bus", a.GetBus).Methods("GET")
+	api.HandleFunc("/devices/{id}/bus", a.UpdateBus).Methods("PUT")
+	api.HandleFunc("/devices/{id}/serial", a.SendSerial).Methods("POST")
+	api.HandleFunc("/devices/{id}/events", a.ListEvents).Methods("GET")
 	api.HandleFunc("/devices/{id}/sync", a.SyncDevice).Methods("POST")
 	api.HandleFunc("/firmware/presets", a.ListFirmwarePresets).Methods("GET")
 	api.HandleFunc("/meta/board-types", a.BoardTypes).Methods("GET")
@@ -78,10 +82,12 @@ func (a *API) GetDevice(w http.ResponseWriter, r *http.Request) {
 	device.Online = a.Hub.IsOnline(device.ID) || device.Online
 	pins, _ := a.Store.GetPins(id)
 	display, _ := a.Store.GetDisplay(id)
+	bus, _ := a.Store.EnsureBus(id, device.BoardType)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"device":  device,
 		"pins":    pins,
 		"display": display,
+		"bus":     bus,
 		"pinout":  models.PinoutForBoard(device.BoardType),
 	})
 }
@@ -203,11 +209,90 @@ func (a *API) UpdateDisplay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"display": display, "command": cmd})
 }
 
+func (a *API) GetBus(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	device, err := a.Store.GetDevice(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "device not found")
+		return
+	}
+	bus, err := a.Store.EnsureBus(id, device.BoardType)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, bus)
+}
+
+func (a *API) UpdateBus(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	var req models.BusUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	bus, err := a.Store.UpdateBus(id, req)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	payload := models.BusCommandPayload(bus)
+	cmd, err := a.Hub.PushCommand(id, "bus_set", payload)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	a.Hub.BroadcastFrontend(ws.Message{Type: "bus_updated", ID: id, Payload: mustRaw(bus)})
+	writeJSON(w, http.StatusOK, map[string]any{"bus": bus, "command": cmd})
+}
+
+func (a *API) SendSerial(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	var req models.SerialPrintRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	req.Message = strings.TrimSpace(req.Message)
+	if req.Message == "" {
+		writeErr(w, http.StatusBadRequest, "message required")
+		return
+	}
+	payload := map[string]any{"message": req.Message}
+	cmd, err := a.Hub.PushCommand(id, "serial_print", payload)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_, _ = a.Store.InsertDeviceEvent(id, "serial_out", payload)
+	a.Hub.BroadcastFrontend(ws.Message{Type: "device_data", ID: id, Payload: mustRaw(map[string]any{
+		"type":    "serial_out",
+		"payload": payload,
+	})})
+	writeJSON(w, http.StatusOK, map[string]any{"command": cmd, "online": a.Hub.IsOnline(id)})
+}
+
+func (a *API) ListEvents(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	events, err := a.Store.ListDeviceEvents(id, 200)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
 func (a *API) SyncDevice(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
+	device, _ := a.Store.GetDevice(id)
 	pins, _ := a.Store.GetPins(id)
 	display, _ := a.Store.GetDisplay(id)
-	payload := map[string]any{"pins": pins, "display": display}
+	boardType := "esp32-c3"
+	if device != nil {
+		boardType = device.BoardType
+	}
+	bus, _ := a.Store.EnsureBus(id, boardType)
+	payload := models.SyncCommandPayload(pins, display, bus)
 	cmd, err := a.Hub.PushCommand(id, "sync", payload)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

@@ -40,7 +40,35 @@ export type DeviceDetail = {
   device: Device
   pins: PinConfig[]
   display: DisplayState | null
+  bus?: BusConfig | null
   pinout?: BoardPinout
+}
+
+export type BusConfig = {
+  id: string
+  device_id: string
+  sda: number
+  scl: number
+  rx: number
+  tx: number
+  uart_baud: number
+  updated_at: string
+}
+
+export type BusUpdateRequest = {
+  sda: number
+  scl: number
+  rx: number
+  tx: number
+  uart_baud: number
+}
+
+export type DeviceEvent = {
+  id: string
+  device_id: string
+  type: string
+  payload: string
+  created_at: string
 }
 
 export type BoardPinout = {
@@ -116,6 +144,18 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
+  getBus: (id: string) => request<BusConfig>(`/api/devices/${id}/bus`),
+  updateBus: (id: string, body: BusUpdateRequest) =>
+    request<{ bus: BusConfig }>(`/api/devices/${id}/bus`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  sendSerial: (id: string, message: string) =>
+    request<{ online: boolean }>(`/api/devices/${id}/serial`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
+  listEvents: (id: string) => request<DeviceEvent[]>(`/api/devices/${id}/events`),
   syncDevice: (id: string) =>
     request<{ online: boolean }>(`/api/devices/${id}/sync`, { method: 'POST' }),
   firmwarePresets: () => request<FirmwarePreset[]>('/api/firmware/presets'),

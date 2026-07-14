@@ -85,10 +85,48 @@ type DisplayUpdateRequest struct {
 	Clear      bool     `json:"clear"`
 }
 
+type BusConfig struct {
+	ID        string    `json:"id"`
+	DeviceID  string    `json:"device_id"`
+	SDA       int       `json:"sda"`
+	SCL       int       `json:"scl"`
+	RX        int       `json:"rx"`
+	TX        int       `json:"tx"`
+	UARTBaud  int       `json:"uart_baud"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type BusUpdateRequest struct {
+	SDA      int `json:"sda"`
+	SCL      int `json:"scl"`
+	RX       int `json:"rx"`
+	TX       int `json:"tx"`
+	UARTBaud int `json:"uart_baud"`
+}
+
+type SerialPrintRequest struct {
+	Message string `json:"message"`
+}
+
+type DeviceEvent struct {
+	ID        string    `json:"id"`
+	DeviceID  string    `json:"device_id"`
+	Type      string    `json:"type"`
+	Payload   string    `json:"payload"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type DeviceStatusPayload struct {
 	FirmwareVer string         `json:"firmware_ver"`
 	LocalIP     string         `json:"local_ip"`
 	Pins        []PinTelemetry `json:"pins"`
+	Bus         *BusConfig     `json:"bus,omitempty"`
+}
+
+type DeviceDataPayload struct {
+	Source  string `json:"source"`
+	Message string `json:"message"`
+	TS      int64  `json:"ts"`
 }
 
 type PinTelemetry struct {
@@ -112,15 +150,29 @@ func GPIOsForBoard(boardType string) []int {
 
 // PinLabel returns a friendly label for a GPIO on the given board.
 func PinLabel(boardType string, gpio int) string {
+	switch gpio {
+	case 8:
+		return "GPIO8 (Built-in LED)"
+	}
 	if boardType == "esp32-c3-oled" {
 		switch gpio {
-		case 8:
-			return "GPIO8 (OLED SDA*)"
-		case 9:
-			return "GPIO9 (OLED SCL*)"
+		case 5:
+			return "GPIO5 (default SDA)"
+		case 6:
+			return "GPIO6 (default SCL)"
 		}
 	}
 	return fmt.Sprintf("GPIO%d", gpio)
+}
+
+// DefaultBusForBoard returns I2C/UART pin defaults for a board type.
+func DefaultBusForBoard(boardType string) BusConfig {
+	bus := BusConfig{SDA: 5, SCL: 6, RX: 20, TX: 21, UARTBaud: 115200}
+	if boardType == "esp32-c3-oled" {
+		// Common 0.42" ESP32-C3 OLED modules use GPIO5/6 for I2C
+		bus.SDA, bus.SCL = 5, 6
+	}
+	return bus
 }
 
 // BoardPinout describes the physical header for the UI.
@@ -141,7 +193,7 @@ func PinoutForBoard(boardType string) BoardPinout {
 		Notes:     "Controllable header pins are GPIO 0–10. 3V / 5V / GND are power only. RX / TX are UART (programming/serial) — avoid using them as GPIO unless you know the board mapping.",
 	}
 	if boardType == "esp32-c3-oled" {
-		base.Notes = "ESP32-C3 OLED header: GPIO 0–10, 3V, 5V, RX, TX, GND. Built-in OLED usually uses I2C on GPIO8 (SDA) and GPIO9 (SCL) — leave those free if you use the display."
+		base.Notes = "ESP32-C3 OLED header: GPIO 0–10, 3V, 5V, RX, TX, GND. OLED I2C defaults to SDA=GPIO5 / SCL=GPIO6 (configurable). GPIO8 is the active-low built-in LED."
 	}
 	return base
 }

@@ -87,8 +87,30 @@ func (s *Store) migrate() error {
 		FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE
 	);
 
+	CREATE TABLE IF NOT EXISTS bus_configs (
+		id TEXT PRIMARY KEY,
+		device_id TEXT NOT NULL UNIQUE,
+		sda INTEGER NOT NULL DEFAULT 5,
+		scl INTEGER NOT NULL DEFAULT 6,
+		rx INTEGER NOT NULL DEFAULT 20,
+		tx INTEGER NOT NULL DEFAULT 21,
+		uart_baud INTEGER NOT NULL DEFAULT 115200,
+		updated_at DATETIME NOT NULL,
+		FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS device_events (
+		id TEXT PRIMARY KEY,
+		device_id TEXT NOT NULL,
+		type TEXT NOT NULL,
+		payload TEXT NOT NULL,
+		created_at DATETIME NOT NULL,
+		FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_commands_device_status ON commands(device_id, status);
 	CREATE INDEX IF NOT EXISTS idx_pins_device ON pin_configs(device_id);
+	CREATE INDEX IF NOT EXISTS idx_events_device_created ON device_events(device_id, created_at DESC);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -150,6 +172,15 @@ func (s *Store) CreateDevice(req models.CreateDeviceRequest) (*models.Device, er
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	defBus := models.DefaultBusForBoard(d.BoardType)
+	_, err = tx.Exec(`
+		INSERT INTO bus_configs (id, device_id, sda, scl, rx, tx, uart_baud, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), d.ID, defBus.SDA, defBus.SCL, defBus.RX, defBus.TX, defBus.UARTBaud, now)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -356,6 +387,126 @@ func (s *Store) UpdateDisplay(deviceID string, req models.DisplayUpdateRequest) 
 		return nil, err
 	}
 	return s.GetDisplay(deviceID)
+}
+
+func (s *Store) GetBus(deviceID string) (*models.BusConfig, error) {
+	row := s.db.QueryRow(`
+		SELECT id, device_id, sda, scl, rx, tx, uart_baud, updated_at
+		FROM bus_configs WHERE device_id=?`, deviceID)
+	var b models.BusConfig
+	err := row.Scan(&b.ID, &b.DeviceID, &b.SDA, &b.SCL, &b.RX, &b.TX, &b.UARTBaud, &b.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+func (s *Store) EnsureBus(deviceID, boardType string) (*models.BusConfig, error) {
+	existing, err := s.GetBus(deviceID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	now := time.Now().UTC()
+	def := models.DefaultBusForBoard(boardType)
+	_, err = s.db.Exec(`
+		INSERT INTO bus_configs (id, device_id, sda, scl, rx, tx, uart_baud, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), deviceID, def.SDA, def.SCL, def.RX, def.TX, def.UARTBaud, now)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetBus(deviceID)
+}
+
+func (s *Store) UpdateBus(deviceID string, req models.BusUpdateRequest) (*models.BusConfig, error) {
+	now := time.Now().UTC()
+	baud := req.UARTBaud
+	if baud <= 0 {
+		baud = 115200
+	}
+	existing, _ := s.GetBus(deviceID)
+	if existing == nil {
+		_, err := s.db.Exec(`
+			INSERT INTO bus_configs (id, device_id, sda, scl, rx, tx, uart_baud, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.New().String(), deviceID, req.SDA, req.SCL, req.RX, req.TX, baud, now)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		_, err := s.db.Exec(`
+			UPDATE bus_configs SET sda=?, scl=?, rx=?, tx=?, uart_baud=?, updated_at=?
+			WHERE device_id=?`,
+			req.SDA, req.SCL, req.RX, req.TX, baud, now, deviceID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s.GetBus(deviceID)
+}
+
+func (s *Store) InsertDeviceEvent(deviceID, eventType string, payload any) (*models.DeviceEvent, error) {
+	now := time.Now().UTC()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	ev := &models.DeviceEvent{
+		ID:        uuid.New().String(),
+		DeviceID:  deviceID,
+		Type:      eventType,
+		Payload:   string(body),
+		CreatedAt: now,
+	}
+	_, err = s.db.Exec(`
+		INSERT INTO device_events (id, device_id, type, payload, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		ev.ID, ev.DeviceID, ev.Type, ev.Payload, ev.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	// Keep last 500 events per device
+	_, _ = s.db.Exec(`
+		DELETE FROM device_events
+		WHERE device_id = ?
+		  AND id IN (
+			SELECT id FROM (
+				SELECT id FROM device_events WHERE device_id = ? ORDER BY created_at DESC LIMIT -1 OFFSET 500
+			)
+		  )`, deviceID, deviceID)
+	return ev, nil
+}
+
+func (s *Store) ListDeviceEvents(deviceID string, limit int) ([]models.DeviceEvent, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.Query(`
+		SELECT id, device_id, type, payload, created_at
+		FROM device_events WHERE device_id=? ORDER BY created_at DESC LIMIT ?`, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []models.DeviceEvent
+	for rows.Next() {
+		var e models.DeviceEvent
+		if err := rows.Scan(&e.ID, &e.DeviceID, &e.Type, &e.Payload, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	if events == nil {
+		events = []models.DeviceEvent{}
+	}
+	return events, nil
 }
 
 func (s *Store) CreateCommand(deviceID, cmdType string, payload any) (*models.Command, error) {
