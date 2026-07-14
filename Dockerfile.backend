@@ -13,20 +13,21 @@ ENV CGO_ENABLED=1
 RUN go build -ldflags="-s -w" -o /out/server ./cmd/server
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gosu \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin appuser
 
 WORKDIR /app
 COPY --from=build /out/server /app/server
+COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN mkdir -p /app/data \
+  && chown -R appuser:appuser /app \
+  && chmod +x /app/docker-entrypoint.sh
 
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
-
-USER appuser
 ENV PORT=8080 \
     DATA_DIR=/app/data
 
 EXPOSE 8080
 VOLUME ["/app/data"]
 
-CMD ["/app/server"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
